@@ -1,0 +1,19 @@
+# Each app (backend/, frontend/) keeps its own build ignores; this file covers the whole repo.
+
+### IDEs ###
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+### OS ###
+.DS_Store
+Thumbs.db
+desktop.ini
+
+### Frontend ###
+node_modules/
+
+### Local environment ###
+.env

@@ -1,0 +1,4 @@
+# Store text with LF line endings; backend/.gitattributes keeps mvnw.cmd as CRLF.
+* text=auto eol=lf
+*.png binary
+*.jar binary
