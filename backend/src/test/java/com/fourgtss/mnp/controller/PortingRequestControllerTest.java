@@ -14,7 +14,10 @@ import java.util.UUID;
 import com.fourgtss.mnp.auth.OrganizationHeaderInterceptor;
 import com.fourgtss.mnp.common.BusinessRuleViolationException;
 import com.fourgtss.mnp.common.ConflictException;
+import com.fourgtss.mnp.common.ForbiddenException;
+import com.fourgtss.mnp.common.NotFoundException;
 import com.fourgtss.mnp.model.PortingRequest;
+import com.fourgtss.mnp.model.PortingStatus;
 import com.fourgtss.mnp.repository.OperatorRepository;
 import com.fourgtss.mnp.service.PortingRequestService;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +31,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
@@ -47,8 +51,9 @@ class PortingRequestControllerTest {
     private OperatorRepository operatorRepository;
 
     @BeforeEach
-    void orangeIsCalling() {
+    void knowsOrangeAndVodafone() {
         given(operatorRepository.findByCode("orange")).willReturn(Optional.of(ORANGE));
+        given(operatorRepository.findByCode("vodafone")).willReturn(Optional.of(VODAFONE));
     }
 
     @Test
@@ -146,6 +151,53 @@ class PortingRequestControllerTest {
                 {"phoneNumber": "01212345678"}"""))
                 .hasStatus(HttpStatus.UNPROCESSABLE_CONTENT)
                 .bodyJson().extractingPath("$.detail").isEqualTo("Orange already holds phone number 01212345678");
+    }
+
+    @Test
+    @DisplayName("US-D1-AC1 accepting returns 200 with the resolved request")
+    void acceptReturnsResolvedRequest() {
+        PortingRequest request = PortingRequest.submit(REQUEST_ID, "01012345678", ORANGE, VODAFONE,
+                Instant.parse("2026-10-24T10:15:30.123Z"));
+        ReflectionTestUtils.setField(request, "status", PortingStatus.ACCEPTED);
+        ReflectionTestUtils.setField(request, "resolvedAt", Instant.parse("2026-10-24T10:16:00Z"));
+        given(portingRequestService.accept(VODAFONE, REQUEST_ID)).willReturn(request);
+
+        assertThat(answer("vodafone", REQUEST_ID + "/accept"))
+                .hasStatusOk()
+                .bodyJson().isLenientlyEqualTo("""
+                        {"id": "%s", "status": "ACCEPTED", "resolvedAt": "2026-10-24T10:16:00Z"}""".formatted(REQUEST_ID));
+    }
+
+    @Test
+    @DisplayName("US-D4-AC5 a request id that isn't a UUID is rejected with 400")
+    void rejectsNonUuidId() {
+        assertThat(answer("vodafone", "42/accept")).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(answer("vodafone", "42/reject")).hasStatus(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(portingRequestService);
+    }
+
+    @Test
+    @DisplayName("US-D3-AC1 a caller that isn't the donor gets 403")
+    void mapsForbiddenTo403() {
+        given(portingRequestService.reject(ORANGE, REQUEST_ID))
+                .willThrow(new ForbiddenException("Only the donor can accept or reject porting request " + REQUEST_ID));
+
+        assertThat(answer("orange", REQUEST_ID + "/reject")).hasStatus(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("US-D4-AC2 a request the caller can't find gives 404")
+    void mapsNotFoundTo404() {
+        given(portingRequestService.accept(VODAFONE, REQUEST_ID))
+                .willThrow(new NotFoundException("Porting request %s not found".formatted(REQUEST_ID)));
+
+        assertThat(answer("vodafone", REQUEST_ID + "/accept"))
+                .hasStatus(HttpStatus.NOT_FOUND)
+                .hasContentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON);
+    }
+
+    private MvcTestResult answer(String organization, String path) {
+        return mvc.post().uri("/api/porting-requests/" + path).header("organization", organization).exchange();
     }
 
     private MvcTestResult submit(String body) {

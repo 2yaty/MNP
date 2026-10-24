@@ -3,13 +3,17 @@ package com.fourgtss.mnp.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 import com.fourgtss.mnp.common.BusinessRuleViolationException;
 import com.fourgtss.mnp.common.ConflictException;
+import com.fourgtss.mnp.common.ForbiddenException;
+import com.fourgtss.mnp.common.NotFoundException;
 import com.fourgtss.mnp.model.NumberOwnership;
 import com.fourgtss.mnp.model.Operator;
 import com.fourgtss.mnp.model.PortingRequest;
 import com.fourgtss.mnp.model.PortingStatus;
+import com.fourgtss.mnp.repository.PortedNumberRepository;
 import com.fourgtss.mnp.repository.PortingRequestRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -23,13 +27,16 @@ public class PortingRequestService {
     private static final String PENDING_PHONE_NUMBER_CONSTRAINT = "uk_porting_requests_pending_phone_number";
 
     private final PortingRequestRepository portingRequestRepository;
+    private final PortedNumberRepository portedNumberRepository;
     private final PhoneNumberService phoneNumberService;
     private final IdGenerator idGenerator;
     private final Clock clock;
 
     public PortingRequestService(PortingRequestRepository portingRequestRepository,
-                                 PhoneNumberService phoneNumberService, IdGenerator idGenerator, Clock clock) {
+                                 PortedNumberRepository portedNumberRepository, PhoneNumberService phoneNumberService,
+                                 IdGenerator idGenerator, Clock clock) {
         this.portingRequestRepository = portingRequestRepository;
+        this.portedNumberRepository = portedNumberRepository;
         this.phoneNumberService = phoneNumberService;
         this.idGenerator = idGenerator;
         this.clock = clock;
@@ -66,6 +73,46 @@ public class PortingRequestService {
             }
             throw exception;
         }
+    }
+
+    /**
+     * The donor accepts a pending request; the number moves to the recipient.
+     *
+     * @throws NotFoundException  if the request doesn't exist or the caller can't see it
+     * @throws ForbiddenException if the caller isn't the donor
+     * @throws ConflictException  if the request isn't pending anymore
+     */
+    @Transactional
+    public PortingRequest accept(Operator caller, UUID requestId) {
+        PortingRequest request = resolve(caller, requestId, PortingStatus.ACCEPTED);
+        portedNumberRepository.recordCurrentHolder(request.getPhoneNumber(), request.getRecipient().getId());
+        return request;
+    }
+
+    /**
+     * The donor rejects a pending request; the number stays where it is.
+     *
+     * @throws NotFoundException  if the request doesn't exist or the caller can't see it
+     * @throws ForbiddenException if the caller isn't the donor
+     * @throws ConflictException  if the request isn't pending anymore
+     */
+    @Transactional
+    public PortingRequest reject(Operator caller, UUID requestId) {
+        return resolve(caller, requestId, PortingStatus.REJECTED);
+    }
+
+    private PortingRequest resolve(Operator caller, UUID requestId, PortingStatus outcome) {
+        boolean resolved = portingRequestRepository.resolvePending(requestId, caller, outcome, now()) == 1;
+        PortingRequest request = portingRequestRepository.findWithOperatorsById(requestId)
+                .filter(found -> found.isVisibleTo(caller))
+                .orElseThrow(() -> new NotFoundException("Porting request %s not found".formatted(requestId)));
+        if (resolved) {
+            return request;
+        }
+        if (!request.getDonor().equals(caller)) {
+            throw new ForbiddenException("Only the donor can accept or reject porting request %s".formatted(requestId));
+        }
+        throw new ConflictException("Porting request %s is already %s".formatted(requestId, request.getStatus()));
     }
 
     /** Millisecond precision, matching the DATETIME(3) columns. */

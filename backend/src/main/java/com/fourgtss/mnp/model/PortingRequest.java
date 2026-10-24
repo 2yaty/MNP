@@ -69,6 +69,15 @@ public class PortingRequest implements Persistable<UUID> {
         return new PortingRequest(id, phoneNumber, recipient, donor, createdAt);
     }
 
+    /** The recipient and donor see their requests in every status; other operators only see accepted ones. */
+    public boolean isVisibleTo(Operator operator) {
+        return isParty(operator) || status == PortingStatus.ACCEPTED;
+    }
+
+    private boolean isParty(Operator operator) {
+        return recipient.equals(operator) || donor.equals(operator);
+    }
+
     @Override
     public UUID getId() {
         return id;

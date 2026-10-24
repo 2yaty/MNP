@@ -6,6 +6,9 @@ import static com.fourgtss.mnp.fixture.TestOperators.VODAFONE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,10 +22,13 @@ import java.util.UUID;
 
 import com.fourgtss.mnp.common.BusinessRuleViolationException;
 import com.fourgtss.mnp.common.ConflictException;
+import com.fourgtss.mnp.common.ForbiddenException;
+import com.fourgtss.mnp.common.NotFoundException;
 import com.fourgtss.mnp.model.NumberOwnership;
 import com.fourgtss.mnp.model.Operator;
 import com.fourgtss.mnp.model.PortingRequest;
 import com.fourgtss.mnp.model.PortingStatus;
+import com.fourgtss.mnp.repository.PortedNumberRepository;
 import com.fourgtss.mnp.repository.PortingRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +37,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class PortingRequestServiceTest {
@@ -43,13 +50,17 @@ class PortingRequestServiceTest {
     private PortingRequestRepository portingRequestRepository;
 
     @Mock
+    private PortedNumberRepository portedNumberRepository;
+
+    @Mock
     private PhoneNumberService phoneNumberService;
 
     private PortingRequestService service;
 
     @BeforeEach
     void createService() {
-        service = new PortingRequestService(portingRequestRepository, phoneNumberService, () -> REQUEST_ID,
+        service = new PortingRequestService(portingRequestRepository, portedNumberRepository, phoneNumberService,
+                () -> REQUEST_ID,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -153,6 +164,84 @@ class PortingRequestServiceTest {
 
         assertThatThrownBy(() -> service.submit(ORANGE, VODAFONE_NUMBER))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("US-D1-AC1/AC2 the donor accepts: the request is resolved and the recipient becomes the holder")
+    void acceptResolvesRequestAndRecordsNewHolder() {
+        PortingRequest pending = givenRequest(PortingStatus.PENDING);
+        given(portingRequestRepository.resolvePending(REQUEST_ID, VODAFONE, PortingStatus.ACCEPTED,
+                Instant.parse("2026-10-24T10:15:30.123Z"))).willReturn(1);
+
+        assertThat(service.accept(VODAFONE, REQUEST_ID)).isSameAs(pending);
+        verify(portedNumberRepository).recordCurrentHolder(VODAFONE_NUMBER, ORANGE.getId());
+    }
+
+    @Test
+    @DisplayName("US-D2-AC1/AC2 the donor rejects: the request is resolved and the holder doesn't change")
+    void rejectResolvesRequestWithoutMovingTheNumber() {
+        PortingRequest pending = givenRequest(PortingStatus.PENDING);
+        given(portingRequestRepository.resolvePending(eq(REQUEST_ID), eq(VODAFONE), eq(PortingStatus.REJECTED), any()))
+                .willReturn(1);
+
+        assertThat(service.reject(VODAFONE, REQUEST_ID)).isSameAs(pending);
+        verify(portedNumberRepository, never()).recordCurrentHolder(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("US-D3-AC1 the recipient can't answer its own request")
+    void recipientCannotAnswer() {
+        givenRequest(PortingStatus.PENDING);
+
+        assertThatThrownBy(() -> service.accept(ORANGE, REQUEST_ID))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("Only the donor can accept or reject porting request " + REQUEST_ID);
+        verify(portedNumberRepository, never()).recordCurrentHolder(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("US-D3-AC2 a third party can't see a pending request, so it gets not found")
+    void thirdPartyCannotSeePendingRequest() {
+        givenRequest(PortingStatus.PENDING);
+
+        assertThatThrownBy(() -> service.reject(ETISALAT, REQUEST_ID)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("A third party can see an accepted request but can't answer it")
+    void thirdPartyCannotAnswerAcceptedRequest() {
+        givenRequest(PortingStatus.ACCEPTED);
+
+        assertThatThrownBy(() -> service.reject(ETISALAT, REQUEST_ID)).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("US-D4-AC1/AC3 the donor can't answer a request that isn't pending")
+    void donorCannotAnswerResolvedRequest() {
+        givenRequest(PortingStatus.CANCELED);
+
+        assertThatThrownBy(() -> service.accept(VODAFONE, REQUEST_ID))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Porting request %s is already CANCELED".formatted(REQUEST_ID));
+        verify(portedNumberRepository, never()).recordCurrentHolder(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("US-D4-AC2 answering a request that doesn't exist gives not found")
+    void answeringMissingRequestGivesNotFound() {
+        given(portingRequestRepository.findWithOperatorsById(REQUEST_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.accept(VODAFONE, REQUEST_ID))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Porting request %s not found".formatted(REQUEST_ID));
+    }
+
+    /** A request from Orange (recipient) to Vodafone (donor), as it reads after any update. */
+    private PortingRequest givenRequest(PortingStatus status) {
+        PortingRequest request = PortingRequest.submit(REQUEST_ID, VODAFONE_NUMBER, ORANGE, VODAFONE, NOW);
+        ReflectionTestUtils.setField(request, "status", status);
+        given(portingRequestRepository.findWithOperatorsById(REQUEST_ID)).willReturn(Optional.of(request));
+        return request;
     }
 
     private void givenOwnership(String phoneNumber, Operator rangeOwner, Operator currentHolder) {
