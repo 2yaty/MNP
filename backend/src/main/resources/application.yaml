@@ -17,3 +17,8 @@ spring:
   jackson:
     deserialization:
       fail-on-unknown-properties: true  # clients can't send fields like donor or status
+
+mnp:
+  porting:
+    timeout: 2m                # pending requests older than this are canceled
+    expiry-check-interval: 10s

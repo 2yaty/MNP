@@ -53,4 +53,18 @@ public interface PortingRequestRepository extends JpaRepository<PortingRequest, 
               and p.donor = :donor
               and p.status = com.fourgtss.mnp.model.PortingStatus.PENDING""")
     int resolvePending(UUID id, Operator donor, PortingStatus outcome, Instant resolvedAt);
+
+    /**
+     * Cancels every request still pending that was created before the cutoff (uses
+     * {@code ix_porting_requests_status_created_at}). Guarded by the status, like {@link #resolvePending}.
+     *
+     * @return how many requests were canceled
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update PortingRequest p
+            set p.status = com.fourgtss.mnp.model.PortingStatus.CANCELED, p.resolvedAt = :canceledAt
+            where p.status = com.fourgtss.mnp.model.PortingStatus.PENDING
+              and p.createdAt < :cutoff""")
+    int cancelPendingCreatedBefore(Instant cutoff, Instant canceledAt);
 }

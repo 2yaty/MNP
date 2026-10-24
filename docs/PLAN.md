@@ -101,8 +101,11 @@ accept/reject are separate calls, not one blocking exchange.
 - **API docs:** springdoc-openapi serves Swagger UI at `/swagger-ui.html`. Declare the
   `organization` header once for every operation (an `OpenApiCustomizer`), so reviewers can try
   each endpoint as any operator straight from the page.
-- **Scheduler:** `@Scheduled` job flips `PENDING` → `CANCELED` where
-  `createdAt < now - 2min`. Make the timeout configurable in `application.yaml`.
+- **Timeout job:** `PortingRequestExpiryJob` flips `PENDING` → `CANCELED` where
+  `createdAt < now - timeout`, with the same status-guarded update as accept/reject.
+  `mnp.porting.timeout` (default `2m`) and `mnp.porting.expiry-check-interval` (default `10s`)
+  are bound to a validated `PortingProperties` record. `SchedulingConfig` registers the task from
+  that record instead of a `@Scheduled` placeholder, so there's one source for the interval.
 
 ---
 
@@ -148,8 +151,8 @@ Agreed while writing [DB_SCHEMA.md](DB_SCHEMA.md) and [USER_STORIES.md](USER_STO
   service check.
 
 **Testing**
-- **Inject a `Clock`** (or use a few-second timeout) so the timeout job can be tested without
-  waiting 2 minutes.
+- **Inject a `Clock`** so time-dependent code is unit-tested with a fixed clock. The job's
+  integration test backdates `created_at` and runs the scheduler every 200 ms.
 - **Acceptance criteria have IDs** (`US-R3-AC4`) that tests reference in `@DisplayName`.
 
 ---
