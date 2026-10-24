@@ -1,6 +1,6 @@
 CREATE TABLE operators (
     id          BIGINT       NOT NULL AUTO_INCREMENT,
-    code        VARCHAR(30)  NOT NULL,
+    code        VARCHAR(30)  COLLATE utf8mb4_bin NOT NULL,  -- exact match for the organization header
     name        VARCHAR(100) NOT NULL,
     range_start CHAR(11)     NOT NULL,
     range_end   CHAR(11)     NOT NULL,

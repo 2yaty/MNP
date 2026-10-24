@@ -156,7 +156,7 @@ recipient.
 |----|--------------|------|
 | AC1 | Donor accepts or rejects a request that is `ACCEPTED`, `REJECTED` or `CANCELED` | `409`; nothing changes |
 | AC2 | Donor accepts a well-formed UUID that doesn't exist | `404` |
-| AC5 | Request id in the path isn't a UUID (`/porting-requests/42`) | `400` |
+| AC5 | Request id in the path isn't a UUID (`/api/porting-requests/42`) | `400` |
 | AC3 | The timeout job cancels the request, then the donor accepts | `409`; status stays `CANCELED`; holder unchanged |
 | AC4 | Donor accepts while the job cancels at the same moment | Exactly one wins; final state is either `ACCEPTED` + ported, or `CANCELED` + not ported, never a mix |
 

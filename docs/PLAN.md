@@ -83,8 +83,10 @@ accept/reject are separate calls, not one blocking exchange.
 - **Donor is derived, not supplied.** Recipient = the `organization` header operator. Donor = the
   number's *current holder* (look up `PortedNumber`, else fall back to the operator owning that
   number range). Reject if recipient == donor (can't port a number you already hold).
-- **Mock auth as a `OncePerRequestFilter`/interceptor** that reads `organization`, resolves the
-  Operator, stashes it in a request-scoped bean, and 401/403s on missing/unknown values.
+- **Mock auth as a `HandlerInterceptor`** on `/api/**` that reads `organization`, resolves the
+  Operator, and rejects missing/unknown values with `401`. Controllers receive the caller as an
+  `@AuthenticatedOperator Operator` parameter. An interceptor (not a servlet filter) means its
+  exceptions go through the same `@RestControllerAdvice` as everything else.
 - **"No duplicate pending" rule:** enforce in-service inside the transaction
   (`existsByPhoneNumberAndStatus(PENDING)`); optionally back it with a DB safeguard.
 - **Visibility rule** on list: return requests where `recipient = me OR donor = me OR
@@ -117,7 +119,9 @@ Agreed while writing [DB_SCHEMA.md](DB_SCHEMA.md) and [USER_STORIES.md](USER_STO
   so the API doesn't reveal that the request exists.
 - **Unknown JSON fields return `400`** (`FAIL_ON_UNKNOWN_PROPERTIES` on). Clients can't set
   `donor` or `status`.
-- **`organization` values match exactly.** `Vodafone` with a capital V returns `401`.
+- **`organization` values match exactly.** `Vodafone` with a capital V returns `401`. The
+  database enforces this with a binary collation (`utf8mb4_bin`) on `operators.code`.
+- **API endpoints live under `/api`**, and errors are RFC 9457 problem details.
 - **Ids in URIs and responses are UUIDs.** Porting request ids are UUID v7 (`BINARY(16)`), so
   they can't be guessed and don't show volume. Operators are exposed by `code`, never by DB id.
   A path id that isn't a UUID returns `400`. Visibility checks still do the real access
@@ -160,16 +164,14 @@ mnp-project/
 │   └── src/
 │       ├── main/java/com/fourgtss/mnp/
 │       │   ├── MnpBackendApplication.java
-│       │   ├── config/          # scheduling, web, auth filter
-│       │   ├── common/          # error handling, exceptions, constants
-│       │   ├── operator/        # Operator entity + repo + range lookup
-│       │   ├── porting/
-│       │   │   ├── api/          # controllers + request/response DTOs
-│       │   │   ├── domain/       # PortingRequest, Status
-│       │   │   ├── repository/
-│       │   │   ├── service/      # business rules + state transitions
-│       │   │   └── scheduler/    # timeout canceller
-│       │   └── phonenumber/      # status / current-holder lookup
+│       │   ├── auth/             # organization-header interceptor, @AuthenticatedOperator
+│       │   ├── config/           # web, scheduling, OpenAPI
+│       │   ├── common/           # error handling (problem details), shared exceptions
+│       │   ├── model/            # JPA entities + enums (Operator, PortingRequest, PortingStatus, PortedNumber)
+│       │   ├── controller/       # REST controllers
+│       │   │   └── dto/          # request/response records
+│       │   ├── service/          # business rules, state transitions, timeout job
+│       │   └── repository/       # Spring Data repositories
 │       ├── main/resources/
 │       │   ├── application.yaml
 │       │   └── db/migration/
@@ -193,14 +195,16 @@ mnp-project/
 
 | Method | Path | Who | Purpose |
 |--------|------|-----|---------|
-| POST | `/porting-requests` | recipient | Submit a request for one number |
-| POST | `/porting-requests/{id}/accept` | donor only | Accept (ports the number) |
-| POST | `/porting-requests/{id}/reject` | donor only | Reject |
-| GET | `/porting-requests` | any | List, filtered by visibility rules |
-| GET | `/porting-requests/{id}` | any | One request; `404` if the caller may not see it |
-| GET | `/phone-numbers/{phoneNumber}` | any | Current status + current holder |
+| POST | `/api/porting-requests` | recipient | Submit a request for one number |
+| POST | `/api/porting-requests/{id}/accept` | donor only | Accept (ports the number) |
+| POST | `/api/porting-requests/{id}/reject` | donor only | Reject |
+| GET | `/api/porting-requests` | any | List, filtered by visibility rules |
+| GET | `/api/porting-requests/{id}` | any | One request; `404` if the caller may not see it |
+| GET | `/api/phone-numbers/{phoneNumber}` | any | Current status + current holder |
 
-All requests require the `organization` header.
+All requests require the `organization` header. Endpoints live under `/api`, so the header
+check covers exactly the API, while Actuator (`/actuator/health`) and Swagger UI stay open.
+Errors use RFC 9457 problem details (`application/problem+json`).
 
 ---
 
