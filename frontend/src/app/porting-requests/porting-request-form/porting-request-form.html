@@ -1,0 +1,51 @@
+<section class="card">
+  <h1>New porting request</h1>
+  <p class="hint">
+    You're submitting as <strong>{{ operator().name }}</strong> (the recipient). The operator that
+    holds the number now is the donor and has to accept or reject it.
+  </p>
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <label for="phoneNumber">Phone number</label>
+    <input
+      id="phoneNumber"
+      type="tel"
+      inputmode="numeric"
+      autocomplete="off"
+      placeholder="01012345678"
+      formControlName="phoneNumber"
+      [attr.aria-invalid]="form.controls.phoneNumber.invalid && form.controls.phoneNumber.touched"
+      aria-describedby="phoneNumberHelp"
+    />
+    @if (form.controls.phoneNumber.touched && form.controls.phoneNumber.hasError('required')) {
+      <p id="phoneNumberHelp" class="field-error">Enter a phone number.</p>
+    } @else if (
+      form.controls.phoneNumber.touched && form.controls.phoneNumber.hasError('pattern')
+    ) {
+      <p id="phoneNumberHelp" class="field-error">
+        Use an 11-digit mobile number starting with 01.
+      </p>
+    } @else {
+      <p id="phoneNumberHelp" class="field-help">
+        11 digits starting with 01, for example 01012345678.
+      </p>
+    }
+
+    <button type="submit" [disabled]="form.invalid || submitting()">
+      {{ submitting() ? 'Submitting…' : 'Submit request' }}
+    </button>
+  </form>
+
+  @if (errorMessage(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  @if (created(); as request) {
+    <div class="alert alert-success" role="status">
+      Request for <strong>{{ request.phoneNumber }}</strong> submitted. Status:
+      <strong>{{ request.status }}</strong
+      >, waiting for {{ operatorName(request.donor) }} to answer.
+      <a routerLink="/requests">View requests</a>
+    </div>
+  }
+</section>

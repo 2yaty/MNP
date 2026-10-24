@@ -1,0 +1,21 @@
+<header class="app-header">
+  <div class="brand">MNP <span>Mobile Number Portability</span></div>
+  <nav aria-label="Main">
+    <a routerLink="/requests" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
+      >Requests</a
+    >
+    <a routerLink="/requests/new" routerLinkActive="active">New request</a>
+  </nav>
+  <label class="acting-as">
+    Acting as
+    <select [value]="operator().code" (change)="selectOperator($event)">
+      @for (option of operators; track option.code) {
+        <option [value]="option.code">{{ option.name }}</option>
+      }
+    </select>
+  </label>
+</header>
+
+<main>
+  <router-outlet />
+</main>

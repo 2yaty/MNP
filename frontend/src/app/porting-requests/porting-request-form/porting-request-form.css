@@ -1,0 +1,15 @@
+form {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 24rem;
+}
+
+input {
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+}
+
+button {
+  justify-self: start;
+  margin-top: 0.5rem;
+}
