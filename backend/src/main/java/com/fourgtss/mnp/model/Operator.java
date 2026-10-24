@@ -55,4 +55,15 @@ public class Operator {
     public String getRangeEnd() {
         return rangeEnd;
     }
+
+    /** Equal by {@code code}, the natural key, so instances loaded in different sessions compare equal. */
+    @Override
+    public boolean equals(Object other) {
+        return this == other || other instanceof Operator operator && getCode().equals(operator.getCode());
+    }
+
+    @Override
+    public int hashCode() {
+        return getCode().hashCode();
+    }
 }

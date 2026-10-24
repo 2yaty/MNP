@@ -1,6 +1,9 @@
 spring:
   application:
     name: mnp-backend
+  threads:
+    virtual:
+      enabled: true  # one cheap virtual thread per request instead of a fixed platform-thread pool
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:mnp}
     username: ${DB_USERNAME:mnp}

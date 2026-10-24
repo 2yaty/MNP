@@ -121,7 +121,10 @@ Agreed while writing [DB_SCHEMA.md](DB_SCHEMA.md) and [USER_STORIES.md](USER_STO
   `donor` or `status`.
 - **`organization` values match exactly.** `Vodafone` with a capital V returns `401`. The
   database enforces this with a binary collation (`utf8mb4_bin`) on `operators.code`.
-- **API endpoints live under `/api`**, and errors are RFC 9457 problem details.
+- **API endpoints live under `/api`**, and errors are RFC 9457 problem details. Validation
+  errors add an `errors` map (field → message).
+- **Spring MVC on virtual threads, not WebFlux.** `spring.threads.virtual.enabled: true` gives
+  each request a cheap virtual thread, so blocking JPA calls scale without a reactive rewrite.
 - **Ids in URIs and responses are UUIDs.** Porting request ids are UUID v7 (`BINARY(16)`), so
   they can't be guessed and don't show volume. Operators are exposed by `code`, never by DB id.
   A path id that isn't a UUID returns `400`. Visibility checks still do the real access
