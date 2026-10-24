@@ -1,3 +1,16 @@
 spring:
   application:
     name: mnp-backend
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:mnp}
+    username: ${DB_USERNAME:mnp}
+    password: ${DB_PASSWORD:mnp}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate  # Flyway owns the schema
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true  # clients can't send fields like donor or status

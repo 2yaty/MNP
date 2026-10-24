@@ -20,6 +20,25 @@ automatically.
 - JDK 21
 - Docker (for Docker Compose and the Testcontainers-based tests)
 
-## Build, run and test
+## Run locally (development)
 
-*To be completed with the Docker Compose setup.*
+```bash
+docker compose up -d mysql           # MySQL 8.4 on localhost:3306
+cd backend
+./mvnw spring-boot:run               # Flyway creates the schema on startup
+curl localhost:8080/actuator/health  # {"status":"UP",...}
+```
+
+Tests start their own MySQL with Testcontainers, so they only need Docker running:
+
+```bash
+cd backend
+./mvnw test
+```
+
+Database settings default to the Compose values and can be overridden with `DB_HOST`,
+`DB_PORT`, `DB_NAME`, `DB_USERNAME` and `DB_PASSWORD`.
+
+## Build, run and test with Docker
+
+*To be completed when the app container is added to Docker Compose.*
