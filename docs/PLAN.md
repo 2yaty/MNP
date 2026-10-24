@@ -1,0 +1,225 @@
+# MNP Practicum — Approach & Plan
+
+> My recommendation on what to build first, how to sequence it, and how to lay out the repo.
+> Scope from the brief: submit/accept/reject number-porting requests between operators
+> (Vodafone, Orange, Etisalat), with mocked auth via an `organization` header.
+>
+> The PDF's two diagrams are extracted to `docs/diagrams/`
+> ([flow](diagrams/porting-flow-diagram.png), [state](diagrams/state-diagram.png)) —
+> both **confirm** the design below.
+
+---
+
+## TL;DR
+
+**Build the backend domain + DB design first, as one working vertical slice (create a porting
+request end-to-end), then grow outward.** Don't start with scaffolding everything at once, and
+don't start with the frontend. The reviewer explicitly grades *clean code, API/DB design, naming,
+and sensible use of Spring* — so the domain model and the state machine are where you win or lose.
+
+---
+
+## What to create *first* (in order)
+
+1. **Git repo + `dev/initial` branch + `.gitignore` + README skeleton.** The brief grades the git
+   workflow, so set it up before the first commit, not after.
+2. **Write down the domain model & state machine** (see below). 10 minutes here saves hours.
+3. **Design the API contract + MySQL schema** (Flyway migrations, see
+   [DB_SCHEMA.md](DB_SCHEMA.md)). Lock naming conventions now.
+4. **Backend scaffold** via Spring Initializr: Spring Web, Validation, Spring Data JPA, MySQL
+   Driver, Flyway Migration, Actuator, Configuration Processor, Testcontainers. Then add
+   `springdoc-openapi` (Swagger UI) and `java-uuid-generator` to `pom.xml` by hand.
+5. **First vertical slice:** `POST /porting-requests` working against real MySQL — controller →
+   service → repository → DB. Everything else is a variation on this.
+
+---
+
+## Recommended build sequence (phased)
+
+| Phase | Deliverable |
+|-------|-------------|
+| 1 | Domain model, DB schema, repo + branch, backend scaffold |
+| 2 | `organization` header → operator resolution (mocked auth filter/interceptor) |
+| 3 | Create porting request (+ all validation rules) |
+| 4 | Donor accept / reject (with authz: only donor) |
+| 5 | List requests (visibility rules) + number-status lookup |
+| 6 | Scheduled timeout-cancellation job (2 min) |
+| 7 | Tests (unit for rules, slice/integration for API) |
+| 8 | Angular: create-order form + list page |
+| 9 | Dockerfile + docker-compose (app + MySQL), README run/test docs |
+| 10 | Merge `dev/initial` → `master`, tag `v1.0.0-dev`, delete remote branch |
+
+---
+
+## Domain model (the core)
+
+- **Operator** — DB table seeded with the 3 operators + their number ranges. Prefer a *table* over
+  an enum: the brief lists them as "data" and seeding ranges in SQL demonstrates DB-design care.
+- **PortingRequest** — `id`, `phoneNumber`, `recipientOperatorId`, `donorOperatorId`, `status`,
+  `createdAt`, `resolvedAt`. One phone number per request (single field, not a list).
+- **PortedNumber** (or equivalent) — `phoneNumber` → `currentOperatorId`. Lets you answer "current
+  holder if the number is ported." Updated when a request is **accepted**.
+
+**Status state machine** (matches the PDF's state diagram exactly):
+
+```
+ Start ──invalid──► (rejected at validation, no record)
+   │ valid
+   ▼
+          donor accepts ─► ACCEPTED (terminal)  → updates PortedNumber
+PENDING ──┤ donor rejects ─► REJECTED (terminal)
+          └ 2 min elapse  ─► CANCELED (terminal, by scheduler)
+```
+
+**Flow is asynchronous** (from the PDF's sequence diagram): Recipient → System submits the request
+and gets an immediate **Ack** (record created `PENDING`); the Donor responds later with
+accept/reject; a System background task cancels timed-out pending requests. So submit and
+accept/reject are separate calls, not one blocking exchange.
+
+---
+
+## Key design decisions (these are what the reviewer looks for)
+
+- **Donor is derived, not supplied.** Recipient = the `organization` header operator. Donor = the
+  number's *current holder* (look up `PortedNumber`, else fall back to the operator owning that
+  number range). Reject if recipient == donor (can't port a number you already hold).
+- **Mock auth as a `HandlerInterceptor`** on `/api/**` that reads `organization`, resolves the
+  Operator, and rejects missing/unknown values with `401`. Controllers receive the caller as an
+  `@AuthenticatedOperator Operator` parameter. An interceptor (not a servlet filter) means its
+  exceptions go through the same `@RestControllerAdvice` as everything else.
+- **"No duplicate pending" rule:** enforce in-service inside the transaction
+  (`existsByPhoneNumberAndStatus(PENDING)`); optionally back it with a DB safeguard.
+- **Visibility rule** on list: return requests where `recipient = me OR donor = me OR
+  status = ACCEPTED`. Push this into the repository query, not Java-side filtering.
+- **Schema validation** via Jakarta Bean Validation (`@Valid`, phone-number `@Pattern`), surfaced
+  through a single `@RestControllerAdvice` returning consistent error bodies.
+- **DB ownership:** Flyway owns the schema. The app runs the migrations in
+  `src/main/resources/db/migration/` on startup, against Docker Compose's MySQL and the
+  Testcontainers MySQL alike, so there's one path for both. These SQL files are the "MySQL script"
+  the brief asks for. JPA runs with `ddl-auto: validate` so Hibernate never silently reshapes the
+  schema.
+- **API docs:** springdoc-openapi serves Swagger UI at `/swagger-ui.html`. Declare the
+  `organization` header once for every operation (an `OpenApiCustomizer`), so reviewers can try
+  each endpoint as any operator straight from the page.
+- **Timeout job:** `PortingRequestExpiryJob` flips `PENDING` → `CANCELED` where
+  `createdAt < now - timeout`, with the same status-guarded update as accept/reject.
+  `mnp.porting.timeout` (default `2m`) and `mnp.porting.expiry-check-interval` (default `10s`)
+  are bound to a validated `PortingProperties` record. `SchedulingConfig` registers the task from
+  that record instead of a `@Scheduled` placeholder, so there's one source for the interval.
+
+---
+
+## Decisions made
+
+Agreed while writing [DB_SCHEMA.md](DB_SCHEMA.md) and [USER_STORIES.md](USER_STORIES.md).
+
+**API & errors**
+- **Status codes:** `400` schema, `401` missing or unknown header, `403` visible but not allowed,
+  `404` missing or not visible, `409` state conflict (a pending request exists, or the request
+  isn't `PENDING`), `422` valid schema but breaks a business rule (number outside every range,
+  or the recipient already holds it).
+- **A third party acting on a request gets `404`, not `403`.** It can't see pending requests,
+  so the API doesn't reveal that the request exists.
+- **Unknown JSON fields return `400`** (`FAIL_ON_UNKNOWN_PROPERTIES` on). Clients can't set
+  `donor` or `status`.
+- **`organization` values match exactly.** `Vodafone` with a capital V returns `401`. The
+  database enforces this with a binary collation (`utf8mb4_bin`) on `operators.code`.
+- **API endpoints live under `/api`**, and errors are RFC 9457 problem details. Validation
+  errors add an `errors` map (field → message).
+- **Spring MVC on virtual threads, not WebFlux.** `spring.threads.virtual.enabled: true` gives
+  each request a cheap virtual thread, so blocking JPA calls scale without a reactive rewrite.
+- **Ids in URIs and responses are UUIDs.** Porting request ids are UUID v7 (`BINARY(16)`), so
+  they can't be guessed and don't show volume. Operators are exposed by `code`, never by DB id.
+  A path id that isn't a UUID returns `400`. Visibility checks still do the real access
+  control.
+
+**Domain**
+- **Status spelling is `CANCELED`**, matching the PDF's state diagram.
+- **A number ported back to its original operator counts as not ported.** Ported means the
+  current holder isn't the range owner.
+- **Re-porting is allowed.** The donor is whoever holds the number now.
+- **Numbers outside every operator range are rejected** (`422` on submit, `404` on status
+  lookup).
+
+**Database**
+- **One range per operator**, stored on `operators`. No separate ranges table.
+- **`ported_numbers` keeps only the final state** (`phone_number`, `current_operator_id`). Port
+  details come from the latest `ACCEPTED` request.
+- **No `version` or `updated_at` columns.** The accept/cancel race is handled by conditional
+  updates (`WHERE status = 'PENDING'`), and a request changes only once.
+- **Duplicate pending requests are blocked by a unique generated column** as well as the
+  service check.
+
+**Testing**
+- **Inject a `Clock`** so time-dependent code is unit-tested with a fixed clock. The job's
+  integration test backdates `created_at` and runs the scheduler every 200 ms.
+- **Acceptance criteria have IDs** (`US-R3-AC4`) that tests reference in `@DisplayName`.
+
+---
+
+## Suggested folder structure (monorepo)
+
+```
+mnp-project/
+├── README.md                 # build / run / test instructions
+├── docker-compose.yml        # app + mysql
+├── .gitignore
+├── backend/
+│   ├── Dockerfile
+│   ├── pom.xml
+│   └── src/
+│       ├── main/java/com/fourgtss/mnp/
+│       │   ├── MnpBackendApplication.java
+│       │   ├── auth/             # organization-header interceptor, @AuthenticatedOperator
+│       │   ├── config/           # web, scheduling, OpenAPI
+│       │   ├── common/           # error handling (problem details), shared exceptions
+│       │   ├── model/            # JPA entities + enums (Operator, PortingRequest, PortingStatus, PortedNumber)
+│       │   ├── controller/       # REST controllers
+│       │   │   └── dto/          # request/response records
+│       │   ├── service/          # business rules, state transitions, timeout job
+│       │   └── repository/       # Spring Data repositories
+│       ├── main/resources/
+│       │   ├── application.yaml
+│       │   └── db/migration/
+│       │       ├── V1__create_schema.sql
+│       │       └── V2__seed_operators.sql
+│       └── test/java/...         # unit + web-slice + integration tests
+├── frontend/                 # Angular 20+
+│   └── src/app/
+│       ├── core/                 # http, organization-header interceptor
+│       └── porting/              # create-order form + list page
+└── docs/
+    ├── PLAN.md               # this file
+    ├── DB_SCHEMA.md
+    ├── USER_STORIES.md
+    └── diagrams/             # flow + state diagrams from the PDF
+```
+
+---
+
+## API sketch
+
+| Method | Path | Who | Purpose |
+|--------|------|-----|---------|
+| POST | `/api/porting-requests` | recipient | Submit a request for one number |
+| POST | `/api/porting-requests/{id}/accept` | donor only | Accept (ports the number) |
+| POST | `/api/porting-requests/{id}/reject` | donor only | Reject |
+| GET | `/api/porting-requests?page=&size=` | any | Page of requests, filtered by visibility rules (default size 20, max 100) |
+| GET | `/api/porting-requests/{id}` | any | One request; `404` if the caller may not see it |
+| GET | `/api/phone-numbers/{phoneNumber}` | any | Current status + current holder |
+
+All requests require the `organization` header. Endpoints live under `/api`, so the header
+check covers exactly the API, while Actuator (`/actuator/health`) and Swagger UI stay open.
+Errors use RFC 9457 problem details (`application/problem+json`).
+
+---
+
+## Don't-forget checklist (easy marks)
+
+- [ ] Commit on `dev/initial` from the start; small, meaningful commits.
+- [ ] `docker-compose up` works clean from a fresh clone (healthcheck/`depends_on` so app waits for MySQL).
+- [ ] README covers build, run, **and test** in Docker.
+- [ ] Consistent naming across API, DTOs, DB columns (snake_case in DB, camelCase in JSON).
+- [ ] Meaningful tests for the business rules (duplicate-pending, donor-only authz, timeout, visibility).
+- [ ] Merge to `master`, tag `v1.0.0-dev`, delete the remote `dev/initial` branch.
+- [ ] Email repo link + short description to mostafa.hares@4gtss.com.

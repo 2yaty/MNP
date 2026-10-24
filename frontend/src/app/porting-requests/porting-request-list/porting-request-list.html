@@ -1,0 +1,105 @@
+<section class="card">
+  <div class="heading">
+    <h1>Porting requests</h1>
+    <button
+      type="button"
+      class="secondary"
+      (click)="load(result()?.page ?? 0)"
+      [disabled]="loading()"
+    >
+      Refresh
+    </button>
+  </div>
+  <p class="hint">
+    As <strong>{{ operator().name }}</strong> you see your own requests in every status, plus other
+    operators' accepted ones.
+  </p>
+
+  @if (answerError(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (loadError(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  @if (result(); as page) {
+    @if (page.items.length === 0) {
+      <p class="empty">No porting requests to show.</p>
+    } @else {
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Phone number</th>
+              <th scope="col">Recipient</th>
+              <th scope="col">Donor</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created</th>
+              <th scope="col">Resolved</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (request of page.items; track request.id) {
+              <tr>
+                <td class="number">{{ request.phoneNumber }}</td>
+                <td>{{ operatorName(request.recipient) }}</td>
+                <td>{{ operatorName(request.donor) }}</td>
+                <td>
+                  <span class="status status-{{ request.status.toLowerCase() }}">{{
+                    request.status
+                  }}</span>
+                </td>
+                <td>{{ request.createdAt | date: 'medium' }}</td>
+                <td>{{ request.resolvedAt ? (request.resolvedAt | date: 'medium') : '—' }}</td>
+                <td class="actions">
+                  @if (canAnswer(request)) {
+                    <button
+                      type="button"
+                      (click)="accept(request)"
+                      [disabled]="answeringId() !== null"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      class="danger"
+                      (click)="reject(request)"
+                      [disabled]="answeringId() !== null"
+                    >
+                      Reject
+                    </button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <nav class="pager" aria-label="Pages">
+        <button
+          type="button"
+          class="secondary"
+          (click)="load(page.page - 1)"
+          [disabled]="loading() || page.page === 0"
+        >
+          Previous
+        </button>
+        <span
+          >Page {{ page.page + 1 }} of {{ page.totalPages }} · {{ page.totalItems }} requests</span
+        >
+        <button
+          type="button"
+          class="secondary"
+          (click)="load(page.page + 1)"
+          [disabled]="loading() || page.page + 1 >= page.totalPages"
+        >
+          Next
+        </button>
+      </nav>
+    }
+  } @else if (loading()) {
+    <p class="empty">Loading…</p>
+  }
+</section>

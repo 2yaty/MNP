@@ -1,0 +1,140 @@
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1d2330;
+  --muted: #5c6475;
+  --border: #dfe2e8;
+  --primary: #2459d6;
+  --primary-hover: #1c47ad;
+  --danger: #c2362f;
+  --danger-hover: #9e2a24;
+  --pending-bg: #fff4d6;
+  --pending-fg: #7a5200;
+  --accepted-bg: #dcf3e4;
+  --accepted-fg: #1b6b3a;
+  --closed-bg: #eceef2;
+  --closed-fg: #4d5566;
+  --error-bg: #fdeceb;
+  --success-bg: #e6f5ec;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.5rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.hint,
+.field-help {
+  color: var(--muted);
+}
+
+.field-help,
+.field-error {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.field-error {
+  color: var(--danger);
+}
+
+label {
+  font-weight: 600;
+}
+
+input,
+select {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.alert {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+}
+
+.alert-error {
+  background: var(--error-bg);
+  color: var(--danger);
+}
+
+.alert-success {
+  background: var(--success-bg);
+  color: var(--accepted-fg);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
