@@ -1,28 +1,34 @@
 package com.fourgtss.mnp.controller;
 
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
 
 import com.fourgtss.mnp.auth.AuthenticatedOperator;
+import com.fourgtss.mnp.controller.dto.PageResponse;
 import com.fourgtss.mnp.controller.dto.PortingRequestResponse;
 import com.fourgtss.mnp.controller.dto.SubmitPortingRequest;
 import com.fourgtss.mnp.model.Operator;
 import com.fourgtss.mnp.model.PortingRequest;
 import com.fourgtss.mnp.service.PortingRequestService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/porting-requests")
 public class PortingRequestController {
+
+    static final int MAX_PAGE_SIZE = 100;
 
     private final PortingRequestService portingRequestService;
 
@@ -42,10 +48,14 @@ public class PortingRequestController {
         return ResponseEntity.created(location).body(PortingRequestResponse.from(portingRequest));
     }
 
-    /** The caller's own requests in every status, plus everyone's accepted ones; newest first. */
+    /** The caller's own requests in every status, plus everyone's accepted ones; newest first, one page at a time. */
     @GetMapping
-    public List<PortingRequestResponse> list(@AuthenticatedOperator Operator caller) {
-        return portingRequestService.findVisibleTo(caller).stream().map(PortingRequestResponse::from).toList();
+    public PageResponse<PortingRequestResponse> list(
+            @AuthenticatedOperator Operator caller,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
+        return PageResponse.from(portingRequestService.findVisibleTo(caller, PageRequest.of(page, size)),
+                PortingRequestResponse::from);
     }
 
     /** {@code 404} when the request doesn't exist or the caller isn't allowed to see it. */

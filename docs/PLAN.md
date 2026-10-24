@@ -201,7 +201,7 @@ mnp-project/
 | POST | `/api/porting-requests` | recipient | Submit a request for one number |
 | POST | `/api/porting-requests/{id}/accept` | donor only | Accept (ports the number) |
 | POST | `/api/porting-requests/{id}/reject` | donor only | Reject |
-| GET | `/api/porting-requests` | any | List, filtered by visibility rules |
+| GET | `/api/porting-requests?page=&size=` | any | Page of requests, filtered by visibility rules (default size 20, max 100) |
 | GET | `/api/porting-requests/{id}` | any | One request; `404` if the caller may not see it |
 | GET | `/api/phone-numbers/{phoneNumber}` | any | Current status + current holder |
 

@@ -202,6 +202,8 @@ know who serves it now.
 |----|--------------|------|
 | AC1 | Any operator lists requests | Gets the requests where it is recipient **or** donor, plus everyone's `ACCEPTED` ones |
 | AC2 | — | Each request appears once, newest first |
+| AC3 | `?page=2&size=5` | That page of the list, with `page`, `size`, `totalItems` and `totalPages`. Defaults: page `0`, size `20` |
+| AC4 | `page` below 0, `size` below 1 or above 100, or not a number | `400` |
 
 ---
 

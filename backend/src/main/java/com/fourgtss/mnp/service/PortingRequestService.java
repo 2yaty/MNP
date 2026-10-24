@@ -3,7 +3,6 @@ package com.fourgtss.mnp.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.UUID;
 
 import com.fourgtss.mnp.common.BusinessRuleViolationException;
@@ -17,6 +16,8 @@ import com.fourgtss.mnp.model.PortingStatus;
 import com.fourgtss.mnp.repository.PortedNumberRepository;
 import com.fourgtss.mnp.repository.PortingRequestRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.IdGenerator;
@@ -76,10 +77,10 @@ public class PortingRequestService {
         }
     }
 
-    /** Requests the caller may see, newest first (see {@link PortingRequest#isVisibleTo}). */
+    /** A page of the requests the caller may see, newest first (see {@link PortingRequest#isVisibleTo}). */
     @Transactional(readOnly = true)
-    public List<PortingRequest> findVisibleTo(Operator caller) {
-        return portingRequestRepository.findVisibleTo(caller);
+    public Page<PortingRequest> findVisibleTo(Operator caller, Pageable pageable) {
+        return portingRequestRepository.findVisibleTo(caller, pageable);
     }
 
     /** @throws NotFoundException if the request doesn't exist or the caller can't see it */

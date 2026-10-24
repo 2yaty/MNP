@@ -84,6 +84,30 @@ class PortingReadIntegrationTest {
     }
 
     @Test
+    @DisplayName("US-A2-AC3 pages split the newest-first list and report the totals")
+    void pagesSplitTheList() {
+        assertThat(mvc.get().uri("/api/porting-requests?page=0&size=2").header("organization", "orange"))
+                .hasStatusOk()
+                .bodyJson().isLenientlyEqualTo("""
+                        {
+                          "items": [{"id": "%s"}, {"id": "%s"}],
+                          "page": 0, "size": 2, "totalItems": 5, "totalPages": 3
+                        }""".formatted(etisalatFromOrange, canceled));
+
+        assertThat(mvc.get().uri("/api/porting-requests?page=2&size=2").header("organization", "orange"))
+                .hasStatusOk()
+                .bodyJson().isLenientlyEqualTo("""
+                        {"items": [{"id": "%s"}], "page": 2, "totalItems": 5}""".formatted(pending));
+    }
+
+    @Test
+    @DisplayName("Totals count only what the caller may see")
+    void totalsCountOnlyVisibleRequests() {
+        assertThat(mvc.get().uri("/api/porting-requests").header("organization", "etisalat"))
+                .bodyJson().extractingPath("$.totalItems").isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("US-R5-AC2 the recipient can fetch its request in any status")
     void recipientCanFetchAnyOfItsRequests() {
         for (UUID id : List.of(pending, accepted, rejected, canceled)) {
@@ -165,7 +189,7 @@ class PortingReadIntegrationTest {
         MvcTestResult result = mvc.get().uri("/api/porting-requests").header("organization", organization).exchange();
         assertThat(result).hasStatusOk();
         String body = new String(result.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
-        List<String> ids = JsonPath.read(body, "$[*].id");
+        List<String> ids = JsonPath.read(body, "$.items[*].id");
         return ids.stream().map(UUID::fromString).toList();
     }
 

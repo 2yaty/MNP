@@ -1,13 +1,14 @@
 package com.fourgtss.mnp.repository;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.fourgtss.mnp.model.Operator;
 import com.fourgtss.mnp.model.PortingRequest;
 import com.fourgtss.mnp.model.PortingStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -25,13 +26,18 @@ public interface PortingRequestRepository extends JpaRepository<PortingRequest, 
      * accepted ones. Newest first; the id (UUID v7, time-ordered) breaks ties within a millisecond.
      */
     @EntityGraph(attributePaths = {"recipient", "donor"})
-    @Query("""
+    @Query(value = """
             select p from PortingRequest p
             where p.recipient = :operator
                or p.donor = :operator
                or p.status = com.fourgtss.mnp.model.PortingStatus.ACCEPTED
-            order by p.createdAt desc, p.id desc""")
-    List<PortingRequest> findVisibleTo(Operator operator);
+            order by p.createdAt desc, p.id desc""",
+            countQuery = """
+            select count(p) from PortingRequest p
+            where p.recipient = :operator
+               or p.donor = :operator
+               or p.status = com.fourgtss.mnp.model.PortingStatus.ACCEPTED""")
+    Page<PortingRequest> findVisibleTo(Operator operator, Pageable pageable);
 
     /**
      * Moves a pending request to its outcome, only if the caller is its donor. The status condition makes

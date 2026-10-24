@@ -25,10 +25,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -155,17 +158,50 @@ class PortingRequestControllerTest {
     }
 
     @Test
-    @DisplayName("US-A2-AC1 listing returns the requests the service says the caller may see")
-    void listReturnsVisibleRequests() {
+    @DisplayName("US-A2-AC1 listing returns a page of the requests the caller may see, 20 per page by default")
+    void listReturnsFirstPageByDefault() {
         PortingRequest request = PortingRequest.submit(REQUEST_ID, "01012345678", ORANGE, VODAFONE,
                 Instant.parse("2026-10-24T10:15:30.123Z"));
-        given(portingRequestService.findVisibleTo(ORANGE)).willReturn(List.of(request));
+        given(portingRequestService.findVisibleTo(ORANGE, PageRequest.of(0, 20)))
+                .willReturn(new PageImpl<>(List.of(request), PageRequest.of(0, 20), 1));
 
         assertThat(mvc.get().uri("/api/porting-requests").header("organization", "orange"))
                 .hasStatusOk()
                 .bodyJson().isLenientlyEqualTo("""
-                        [{"id": "%s", "recipient": "orange", "donor": "vodafone", "status": "PENDING"}]"""
-                        .formatted(REQUEST_ID));
+                        {
+                          "items": [{"id": "%s", "recipient": "orange", "donor": "vodafone", "status": "PENDING"}],
+                          "page": 0,
+                          "size": 20,
+                          "totalItems": 1,
+                          "totalPages": 1
+                        }""".formatted(REQUEST_ID));
+    }
+
+    @Test
+    @DisplayName("US-A2-AC3 the client chooses the page and its size")
+    void listPassesRequestedPage() {
+        given(portingRequestService.findVisibleTo(ORANGE, PageRequest.of(2, 5)))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(2, 5), 11));
+
+        assertThat(mvc.get().uri("/api/porting-requests?page=2&size=5").header("organization", "orange"))
+                .hasStatusOk()
+                .bodyJson().isLenientlyEqualTo("""
+                        {"items": [], "page": 2, "size": 5, "totalItems": 11, "totalPages": 3}""");
+    }
+
+    @ParameterizedTest(name = "page={0}, size={1}")
+    @CsvSource({"-1, 20, page", "0, 0, size", "0, 101, size", "x, 20, page"})
+    @DisplayName("US-A2-AC4 an invalid page or size gives 400")
+    void listRejectsInvalidPaging(String page, String size, String invalidParameter) {
+        MvcTestResult result = mvc.get().uri("/api/porting-requests?page={page}&size={size}", page, size)
+                .header("organization", "orange")
+                .exchange();
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        if (!page.equals("x")) {
+            assertThat(result).bodyJson().extractingPath("$.errors." + invalidParameter).isNotNull();
+        }
+        verifyNoInteractions(portingRequestService);
     }
 
     @Test
