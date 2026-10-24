@@ -3,6 +3,7 @@ package com.fourgtss.mnp.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import com.fourgtss.mnp.common.BusinessRuleViolationException;
@@ -75,6 +76,20 @@ public class PortingRequestService {
         }
     }
 
+    /** Requests the caller may see, newest first (see {@link PortingRequest#isVisibleTo}). */
+    @Transactional(readOnly = true)
+    public List<PortingRequest> findVisibleTo(Operator caller) {
+        return portingRequestRepository.findVisibleTo(caller);
+    }
+
+    /** @throws NotFoundException if the request doesn't exist or the caller can't see it */
+    @Transactional(readOnly = true)
+    public PortingRequest getVisible(Operator caller, UUID requestId) {
+        return portingRequestRepository.findWithOperatorsById(requestId)
+                .filter(request -> request.isVisibleTo(caller))
+                .orElseThrow(() -> new NotFoundException("Porting request %s not found".formatted(requestId)));
+    }
+
     /**
      * The donor accepts a pending request; the number moves to the recipient.
      *
@@ -103,9 +118,7 @@ public class PortingRequestService {
 
     private PortingRequest resolve(Operator caller, UUID requestId, PortingStatus outcome) {
         boolean resolved = portingRequestRepository.resolvePending(requestId, caller, outcome, now()) == 1;
-        PortingRequest request = portingRequestRepository.findWithOperatorsById(requestId)
-                .filter(found -> found.isVisibleTo(caller))
-                .orElseThrow(() -> new NotFoundException("Porting request %s not found".formatted(requestId)));
+        PortingRequest request = getVisible(caller, requestId);
         if (resolved) {
             return request;
         }

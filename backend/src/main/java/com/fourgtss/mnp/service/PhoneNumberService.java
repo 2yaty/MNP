@@ -2,6 +2,7 @@ package com.fourgtss.mnp.service;
 
 import java.util.Optional;
 
+import com.fourgtss.mnp.common.NotFoundException;
 import com.fourgtss.mnp.model.NumberOwnership;
 import com.fourgtss.mnp.model.Operator;
 import com.fourgtss.mnp.model.PortedNumber;
@@ -34,5 +35,12 @@ public class PhoneNumberService {
                     .orElse(rangeOwner);
             return new NumberOwnership(rangeOwner, currentHolder);
         });
+    }
+
+    /** @throws NotFoundException if the number is outside every operator's range */
+    @Transactional(readOnly = true)
+    public NumberOwnership getOwnership(String phoneNumber) {
+        return findOwnership(phoneNumber).orElseThrow(() -> new NotFoundException(
+                "Phone number %s is outside every operator's number range".formatted(phoneNumber)));
     }
 }

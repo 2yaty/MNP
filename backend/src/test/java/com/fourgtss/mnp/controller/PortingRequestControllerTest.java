@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -151,6 +152,50 @@ class PortingRequestControllerTest {
                 {"phoneNumber": "01212345678"}"""))
                 .hasStatus(HttpStatus.UNPROCESSABLE_CONTENT)
                 .bodyJson().extractingPath("$.detail").isEqualTo("Orange already holds phone number 01212345678");
+    }
+
+    @Test
+    @DisplayName("US-A2-AC1 listing returns the requests the service says the caller may see")
+    void listReturnsVisibleRequests() {
+        PortingRequest request = PortingRequest.submit(REQUEST_ID, "01012345678", ORANGE, VODAFONE,
+                Instant.parse("2026-10-24T10:15:30.123Z"));
+        given(portingRequestService.findVisibleTo(ORANGE)).willReturn(List.of(request));
+
+        assertThat(mvc.get().uri("/api/porting-requests").header("organization", "orange"))
+                .hasStatusOk()
+                .bodyJson().isLenientlyEqualTo("""
+                        [{"id": "%s", "recipient": "orange", "donor": "vodafone", "status": "PENDING"}]"""
+                        .formatted(REQUEST_ID));
+    }
+
+    @Test
+    @DisplayName("US-R5-AC2 getting a request by id returns it")
+    void getReturnsRequest() {
+        PortingRequest request = PortingRequest.submit(REQUEST_ID, "01012345678", ORANGE, VODAFONE,
+                Instant.parse("2026-10-24T10:15:30.123Z"));
+        given(portingRequestService.getVisible(ORANGE, REQUEST_ID)).willReturn(request);
+
+        assertThat(mvc.get().uri("/api/porting-requests/{id}", REQUEST_ID).header("organization", "orange"))
+                .hasStatusOk()
+                .bodyJson().extractingPath("$.id").isEqualTo(REQUEST_ID.toString());
+    }
+
+    @Test
+    @DisplayName("US-T1-AC3 a request the caller can't see gives 404")
+    void getMapsNotFoundTo404() {
+        given(portingRequestService.getVisible(ORANGE, REQUEST_ID))
+                .willThrow(new NotFoundException("Porting request %s not found".formatted(REQUEST_ID)));
+
+        assertThat(mvc.get().uri("/api/porting-requests/{id}", REQUEST_ID).header("organization", "orange"))
+                .hasStatus(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Getting a request whose id isn't a UUID gives 400")
+    void getRejectsNonUuidId() {
+        assertThat(mvc.get().uri("/api/porting-requests/42").header("organization", "orange"))
+                .hasStatus(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(portingRequestService);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.fourgtss.mnp.repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,6 +19,19 @@ public interface PortingRequestRepository extends JpaRepository<PortingRequest, 
 
     @EntityGraph(attributePaths = {"recipient", "donor"})
     Optional<PortingRequest> findWithOperatorsById(UUID id);
+
+    /**
+     * The requests an operator may see: its own as recipient or donor, in every status, plus everyone's
+     * accepted ones. Newest first; the id (UUID v7, time-ordered) breaks ties within a millisecond.
+     */
+    @EntityGraph(attributePaths = {"recipient", "donor"})
+    @Query("""
+            select p from PortingRequest p
+            where p.recipient = :operator
+               or p.donor = :operator
+               or p.status = com.fourgtss.mnp.model.PortingStatus.ACCEPTED
+            order by p.createdAt desc, p.id desc""")
+    List<PortingRequest> findVisibleTo(Operator operator);
 
     /**
      * Moves a pending request to its outcome, only if the caller is its donor. The status condition makes
